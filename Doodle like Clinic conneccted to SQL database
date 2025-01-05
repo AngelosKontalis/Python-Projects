@@ -1,1 +1,1064 @@
+import pymysql
+from datetime import datetime, date, timedelta
+import re
+from tabulate import tabulate
 
+def ssn_get():
+    while True:
+        ssn = input("Enter your SSN (11-digit integer): ")
+        if ssn.isdigit() and len(ssn) == 11: break
+        print('Enter a valid SSN.')
+    return ssn
+
+def phys_id_get():
+    while True:
+        phys_id = input('Enter your ID (format: PHYxxx): ').upper()
+        if re.match(r'^PHY\d{3}$', phys_id): break
+        else:
+            print("Invalid ID.")
+    return phys_id
+
+def email_get():
+    while True:
+        email = input("Enter your e-mail: ")
+        if re.match(r"^[\w\.-]+@[a-zA-Z][\w\.-]*\.[a-zA-Z]{2,4}$", email): break
+        print("Enter a valid email (e.g. clinic@gmail.com).")
+    return email
+
+def lname_get():
+    while True:
+        lname = input("Enter your last name: ")
+        if lname.isalpha(): break
+        print('Enter a valid last name.')
+    return lname
+
+def fname_get():
+    while True:
+        fname = input("Enter your first name: ")
+        if fname.isalpha(): break
+        print('Enter a valid first name.')
+    return fname
+
+def birthdate_get():
+    while True:
+        input_date = input("Enter your birth date (YYYY-MM-DD): ")
+        try:
+            birth_date = datetime.strptime(input_date, "%Y-%m-%d")
+            if birth_date >= datetime.now():
+                print("Birth date must be before the current date ({}).".format(date.today()))
+                continue
+            break
+        except ValueError:
+            print('Enter a valid birth date.')
+    return birth_date
+
+def phone_get():
+    while True:
+        phone = input("Enter your phone number: ")
+        if phone.isdigit() and len(phone) == 10 and phone.startswith("69"): break
+        print("Enter a valid phone number (10-digit number starting with '69').")
+    return phone
+
+def address_get():
+    while True:
+        address = input("Enter your address: ")
+        if any(char.isalpha() for char in address): break
+        print("Enter a valid address.")
+
+def spec_name_get(connection):
+    try:
+        with connection.cursor() as cursor:
+            # Fetch specialties from the physician table
+            specialties_query = "SELECT DISTINCT spec_name FROM physician;"
+            cursor.execute(specialties_query)
+            spec = cursor.fetchall()
+
+            # Extract and format available specialties
+            specialties = {row[0].capitalize() for row in spec}
+
+            while True:
+                spec_name = input('Enter your specialty: ').capitalize()
+                if spec_name in specialties:
+                    return spec_name
+                else:
+                    print('Invalid specialty. Choose from the available options:')
+                    print(", ".join(sorted(specialties)))
+
+    except pymysql.MySQLError as e:
+        print('Error fetching specialties: ', e)
+        return None
+
+def date_get():
+        while True:
+            input_date = input("Enter the date (DD-MM-YYYY): ")
+            try:
+                input_date = datetime.strptime(input_date, "%d-%m-%Y")
+                
+                if input_date.weekday() in [5, 6]:
+                    print("The entered date falls on a weekend. Please choose a weekday.")
+                    continue
+                
+                date = input_date.strftime("%Y-%m-%d")
+                return date
+
+            except ValueError:
+                print("Enter a valid date in the format DD-MM-YYYY.")
+
+def desired_hour_get(available_hours):
+    while True:
+        desired_hour = input("Enter your desired hour (HH:MM): ").strip()
+        try:
+            # Validate input format
+            desired_hour_obj = datetime.strptime(desired_hour, "%H:%M")
+            desired_hour = desired_hour_obj.strftime("%H:%M")  # Ensure exact formatting
+            
+            # Check if it's in the available hours
+            if desired_hour in available_hours:
+                return desired_hour
+            
+            print("Enter a valid available hour from the list.")
+        except ValueError:
+            print("Enter a valid hour (HH:MM).")
+
+def connect_to_database():
+    try:
+        connection = pymysql.connect(
+            host= "localhost",  
+            user='root', 
+            password=None,
+            database='clinic-final-final'
+        )
+        print("Successfully connected to the database!")
+        return connection
+    except pymysql.MySQLError as e:
+        print("Error connecting to the database:", e)
+        return None   
+
+def check_person_existence(connection, attribute, id): 
+    try:
+        with connection.cursor() as cursor:
+            valid_attributes = {'patient': 'ssn', 'physician': 'phys_id'}
+            if attribute not in valid_attributes:
+                print("Invalid attribute.")
+                return False
+
+            column_name = valid_attributes[attribute]
+            check_if_exist = "SELECT fname FROM {} WHERE {} = %s;".format(attribute, column_name)
+
+            cursor.execute(check_if_exist, (id,))
+            result = cursor.fetchone()
+            
+            if result:
+                print(f"Welcome back, {result[0]}!")
+                return True
+            else:
+                print("New user detected, welcome!")
+                return False
+            
+    except pymysql.MySQLError as e:
+        print("Error checking existence:", e)
+        return None
+
+def insert_patient_data(connection, ssn, email, lname, fname, birth_date, phone, address):
+    try:
+        with connection.cursor() as cursor:
+            insert_patient = 'INSERT INTO patient (ssn, email, lname, fname, birth_date, phone, address) VALUES (%s, %s, %s, %s, %s, %s, %s);'
+            cursor.execute(insert_patient, (ssn, email, lname, fname, birth_date, phone, address))
+            connection.commit()
+            print("Account created successfully!")
+            return cursor.lastrowid 
+
+    except pymysql.MySQLError as e:
+        print("Error inserting user data:", e)
+        return None
+    
+def insert_physician_data(connection, phys_id, email, lname, fname, phone, spec_name):
+    try:
+        with connection.cursor() as cursor:
+            insert_physician = 'INSERT INTO physician (phys_id, email, lname, fname, phone, spec_name) VALUES (%s, %s, %s, %s, %s, %s);'
+            cursor.execute(insert_physician, (phys_id, email, lname, fname, phone, spec_name))
+            connection.commit()
+            print("Account created successfully!")
+            return cursor.lastrowid
+    
+    except pymysql.MySQLError as e:
+        print("Error inserting user data:", e)
+        return None
+
+def delete_user(connection, attribute, id):
+    try:
+        with connection.cursor() as cursor:
+            valid_attributes = {'patient': 'ssn', 'physician': 'phys_id'}
+            if attribute not in valid_attributes:
+                print("Invalid attribute.")
+                return False
+
+            person_id = valid_attributes[attribute]
+            delete = "DELETE FROM {} WHERE {} = %s;".format(attribute, person_id)
+
+            cursor.execute(delete, (id,))
+            connection.commit()
+
+            if cursor.rowcount > 0:
+                print("Account deleted successfully!")
+                return cursor.lastrowid
+            else:
+                print("No account found with the provided ID.")
+                return 
+    except pymysql.MySQLError as e:
+        print("Error deleting user: ", e)
+        return 
+
+def update_user_data(connection, attribute, column, new_value, ssn_or_physid):
+    try:
+        with connection.cursor() as cursor:
+            valid_attributes = {'patient': 'ssn', 'physician': 'phys_id'}
+            if attribute not in valid_attributes:
+                print("Invalid attribute.")
+                return False
+            
+            identification = valid_attributes[attribute]
+            if isinstance(new_value, str):
+                new_value = f"'{new_value}'"
+            
+            update = f'UPDATE {attribute} SET {column}={new_value} WHERE {identification}={ssn_or_physid};'
+
+            cursor.execute(update)
+            connection.commit()
+
+    except pymysql.MySQLError as e:
+        print('Error changing data: ', e)
+        return None
+
+def print_and_choose_physician(connection):
+    try:
+        with connection.cursor() as cursor:
+            # Query to fetch physician details
+            query = """
+                SELECT phys_id, fname, lname, spec_name
+                FROM physician
+                ORDER BY lname, fname;
+            """
+            cursor.execute(query)
+            physicians = cursor.fetchall()
+
+            if not physicians:
+                print("No physicians found in the database.")
+                return None
+
+            print("Available Physicians:")
+            print("-" * 50)
+            for idx, (phys_id, fname, lname, spec_name) in enumerate(physicians, 1):
+                print(f"{idx}. Dr. {fname} {lname} ({spec_name})")
+            print("-" * 50)
+
+            while True:
+                try:
+                    choice = int(input("Enter the number of the physician you want to choose: "))
+                    if 1 <= choice <= len(physicians):
+                        selected_physician = physicians[choice - 1]
+                        print(f"You selected Dr. {selected_physician[1]} {selected_physician[2]} ({selected_physician[3]}).")
+                        return selected_physician[0]  # Return the phys_id
+                    else:
+                        print(f"Invalid choice. Please select a number between 1 and {len(physicians)}.")
+                except ValueError:
+                    print("Please enter a valid number.")
+
+    except pymysql.MySQLError as e:
+        print("Error fetching physicians: ", e)
+        return None
+
+def book_appointment(connection, pat_ssn, phys_id, appointment_date, appointment_time):
+    try:
+        appointment_time += ":00"
+        full_datetime = f"{appointment_date} {appointment_time}"
+
+        with connection.cursor() as cursor:
+            # Fetch the timeslot ID and ensure it is available
+            fetch_slot_id_query = """
+                SELECT ts.id, ts.slot
+                FROM timeslot AS ts
+                JOIN phys_is_available AS pia ON ts.id = pia.slot_id
+                WHERE pia.phys_id = %s AND ts.datetime = %s AND pia.available = 1;
+            """
+            cursor.execute(fetch_slot_id_query, (phys_id, full_datetime))
+            slot_row = cursor.fetchone()
+
+            if not slot_row:
+                print("No available time slot found for the selected physician and time.")
+                return
+
+            slot_id = slot_row[0]
+
+            # Book the appointment and include the slot_id
+            create_apt_query = """
+                INSERT INTO appointment (apt_id, datetime, finished, pat_ssn, phys_id, slot_id)
+                VALUES (UUID(), %s, 0, %s, %s, %s);
+            """
+            cursor.execute(create_apt_query, (full_datetime, pat_ssn, phys_id, slot_id))
+            connection.commit()
+
+            if cursor.rowcount > 0:
+                print("Appointment successfully booked!")
+
+                # Update the timeslot table with the patient's SSN
+                update_timeslot_query = """
+                    UPDATE timeslot
+                    SET pat_ssn = %s
+                    WHERE id = %s;
+                """
+                cursor.execute(update_timeslot_query, (pat_ssn, slot_id))
+                connection.commit()
+
+                if cursor.rowcount > 0:
+                    print("Timeslot updated successfully with patient's SSN.")
+                else:
+                    print("Failed to update the timeslot.")
+
+                # Update physician's availability
+                update_availability_query = """
+                    UPDATE phys_is_available
+                    SET available = 0
+                    WHERE phys_id = %s AND slot_id = %s;
+                """
+                cursor.execute(update_availability_query, (phys_id, slot_id))
+                connection.commit()
+
+                if cursor.rowcount > 0:
+                    print("Physician's availability updated successfully.")
+                else:
+                    print("Failed to update physician's availability.")
+            else:
+                print("Failed to book the appointment. Please check the details and try again.")
+
+    except pymysql.MySQLError as e:
+        print("Error booking appointment: ", e)
+
+     
+def list_table(connection, table):
+    try:
+        with connection.cursor() as cursor:
+            list_something = "SELECT * FROM {};".format(table)
+            cursor.execute(list_something)
+
+            result = cursor.fetchall()
+            column_names = [desc[0] for desc in cursor.description]
+
+            print(tabulate(result, headers=column_names, tablefmt="grid"))
+    
+    except pymysql.MySQLError as e:
+        print("Error listing table:", e)
+        return None
+
+def display_physician_availability(connection, phys_id, date):
+    try:
+        with connection.cursor() as cursor:
+            # SQL query to fetch the physician's available hours on the given date
+            query = """
+                SELECT TIME(ts.datetime)
+                FROM timeslot AS ts
+                JOIN phys_is_available AS pia ON pia.slot_id = ts.id
+                WHERE pia.phys_id = %s AND pia.available = '1' AND DATE(ts.datetime) = %s;
+            """
+            cursor.execute(query, (phys_id, date))
+            available_hours = cursor.fetchall()
+
+            # Check if there are any available hours
+            if not available_hours:
+                print(f"No available hours for Physician ID: {phys_id} on {date}.")
+                return False
+
+            # Normalize and format the available hours
+            normalized_hours = []
+            for row in available_hours:
+                total_seconds = row[0].total_seconds()
+                hours = int(total_seconds // 3600)
+                minutes = int((total_seconds % 3600) // 60)
+                normalized_hours.append(f"{hours:02}:{minutes:02}")
+
+            print(f"Available hours for Physician ID: {phys_id} on {date}:")
+            print(", ".join(normalized_hours))
+            return normalized_hours
+
+    except pymysql.MySQLError as e:
+        print("Error displaying availability: ", e)
+        return
+
+def rate_appointment(connection, pat_ssn):
+    try:
+        with connection.cursor() as cursor:
+            get_appointments = """
+                SELECT a.apt_id, a.datetime, p.spec_name, a.Phys_ID, pr.rating
+                FROM appointment AS a
+                JOIN physician AS p ON a.Phys_ID = p.phys_id
+                LEFT JOIN pat_rates_phys AS pr ON a.apt_id = pr.apt_id
+                WHERE a.pat_ssn = %s AND a.finished = 1;
+            """
+            cursor.execute(get_appointments, (pat_ssn,))
+            appointments = cursor.fetchall()
+
+            if appointments:
+                print('Your finished appointments:')
+                for i, (apt_id, datetime, specialty, phys_id, rating) in enumerate(appointments, 1):
+                    if rating is not None:
+                        print(f"({i}) {datetime} | {phys_id}: {specialty} | Appointment ID: {apt_id} | Previous Rating: {rating}")
+                    else:
+                        print(f"({i}) {datetime} | {phys_id}: {specialty} | Appointment ID: {apt_id} | Not Rated")
+
+                while True:
+                    try:
+                        rate_choice = int(input('Enter the number of the appointment you want to rate or (0) to go back: '))
+
+                        if rate_choice == 0:
+                            break
+
+                        rate_choice -= 1
+                        if 0 <= rate_choice < len(appointments):
+                            apt_id, datetime, specialty, phys_id, current_rating = appointments[rate_choice]
+
+                            if current_rating is not None:
+                                print(f"This appointment has already been rated with a {current_rating}.")
+                                while True:
+                                    try: 
+                                        update_choice = int(input("(1) Update rating\n(0) Go back \n"))
+                                        if update_choice == 0:
+                                            print("Rating not updated.")
+                                            return
+                                        elif update_choice == 1:
+                                            break
+                                        else:
+                                            print('Invalid input. Try again.')
+                                    except ValueError:
+                                        print('Invalid input. Try again.')
+                                        return
+
+                            while True:
+                                try:
+                                    rating = int(input("Enter your rating (1 to 5): "))
+                                    if 1 <= rating <= 5:
+                                        break
+                                    else:
+                                        print("Please enter a valid rating between 1 and 5.")
+                                except ValueError:
+                                    print("Invalid input. Please enter a numeric value between 1 and 5.")
+
+                            if current_rating is None:
+                                rate_apt = """
+                                    INSERT INTO pat_rates_phys (apt_id, phys_id, pat_ssn, rating) 
+                                    VALUES (%s, %s, %s, %s);
+                                """
+                                cursor.execute(rate_apt, (apt_id, phys_id, pat_ssn, rating))
+                            else:
+                                update_apt = """
+                                    UPDATE pat_rates_phys
+                                    SET rating = %s
+                                    WHERE apt_id = %s AND pat_ssn = %s;
+                                """
+                                cursor.execute(update_apt, (rating, apt_id, pat_ssn))
+                            connection.commit()
+
+                            print(f"Thank you! You rated your appointment (ID: {apt_id}) with a {rating}.")
+                            break
+                        else:
+                            print("Invalid choice. Please select a valid appointment number.")
+                    except ValueError:
+                        print("Invalid input. Please enter a number corresponding to an appointment.")
+            else:
+                print("You have no finished appointments to rate.")
+
+    except pymysql.MySQLError as e:
+        print("Error managing appointments: ", e)
+        return None
+    
+def toggle_physician_availability(connection, phys_id, formatted_date):
+    """
+    Manage a physician's availability for a given date.
+
+    Args:
+        connection: Database connection object.
+        phys_id: Physician's ID.
+        formatted_date: Date in SQL 'YYYY-MM-DD' format.
+    """
+    try:
+        physician_number = int(phys_id[3:])
+        allowed_suffix = chr(ord('a') + (physician_number - 1))
+
+        with connection.cursor() as cursor:
+            # Query slots for the specific physician and date
+            get_slots = """
+                SELECT ts.id, ts.datetime, pa.available
+                FROM timeslot AS ts
+                LEFT JOIN phys_is_available AS pa
+                ON ts.id = pa.slot_id AND pa.phys_id = %s
+                WHERE ts.id LIKE %s AND DATE(ts.datetime) = %s;
+            """
+            cursor.execute(get_slots, (phys_id, f"%{allowed_suffix}", formatted_date))
+            slots = cursor.fetchall()
+
+            if slots:
+                table_data = [
+                    [i, datetime_slot.strftime("%d-%m-%Y %H:%M"), "Available" if available == 1 else "Unavailable"]
+                    for i, (_, datetime_slot, available) in enumerate(slots, 1)
+                ]
+                headers = ["#", "Date & Time", "Status"]
+
+                print(f"\nTime slots and availability for {datetime.strptime(formatted_date, '%Y-%m-%d').strftime('%d-%m-%Y')}:")
+                print(tabulate(table_data, headers=headers, tablefmt="grid"))
+
+                selected_slots = input(
+                    "Enter the numbers of the slots you want to toggle availability (separate with commas), or press Enter to exit: "
+                )
+
+                if selected_slots:
+                    selected_slot_numbers = [int(num.strip()) - 1 for num in selected_slots.split(",")]
+
+                    for selected_number in selected_slot_numbers:
+                        if 0 <= selected_number < len(slots):
+                            slot_id, datetime_slot, available = slots[selected_number]
+                            new_availability = 0 if available == 1 else 1
+
+                            if available is None:
+                                insert_availability = """
+                                    INSERT INTO phys_is_available (phys_id, slot_id, available)
+                                    VALUES (%s, %s, %s);
+                                """
+                                cursor.execute(insert_availability, (phys_id, slot_id, new_availability))
+                            else:
+                                update_availability = """
+                                    UPDATE phys_is_available
+                                    SET available = %s
+                                    WHERE phys_id = %s AND slot_id = %s;
+                                """
+                                cursor.execute(update_availability, (new_availability, phys_id, slot_id))
+
+                            connection.commit()
+                            availability_status = "Available" if new_availability == 1 else "Unavailable"
+                            print(f"Slot ID {slot_id} on {datetime_slot.strftime('%d-%m-%Y %H:%M')} is now marked as {availability_status}.")
+                        else:
+                            print("Invalid selection, please choose a valid slot.")
+                else:
+                    print("No slots selected. Availability not altered.")
+            else:
+                print(f"No time slots found for {datetime.strptime(formatted_date, '%Y-%m-%d').strftime('%d-%m-%Y')}.")
+
+    except pymysql.MySQLError as e:
+        print("Error toggling physician availability: ", e)
+        return None
+
+def print_pending_appointments(connection, phys_id):
+    try:
+        with connection.cursor() as cursor:
+            pending_apts = "SELECT apt_id, datetime, pat_ssn FROM appointment WHERE phys_id = %s AND finished = 0 ORDER BY datetime ASC;"
+            cursor.execute(pending_apts, (phys_id,))
+            appointments = cursor.fetchall()
+
+            if appointments:
+                pending_appointments = [[i, apt_id, datetime, pat_ssn] for i, (apt_id, datetime, pat_ssn) in enumerate(appointments, 1)]
+                headers = ['#', 'Appointment ID', 'Date & Time', 'SSN']
+                print('Your pending appointments: ')
+                print(tabulate(pending_appointments, headers = headers, tablefmt="grid"))
+
+            else:
+                print(f"You have no upcoming appointments.")
+
+    except pymysql.MySQLError as e:
+        print("Error fetching unfinished appointments: ", e)
+
+def cancel_appointments(connection, pat_ssn):
+    try:
+        with connection.cursor() as cursor:
+            # Fetch only the appointments belonging to the given pat_ssn
+            get_appointments = """
+                SELECT a.apt_id, a.datetime, p.spec_name, ts.slot, ts.id AS slot_id, a.phys_id
+                FROM appointment AS a
+                JOIN physician AS p ON a.phys_id = p.phys_id
+                JOIN timeslot AS ts ON ts.datetime = a.datetime AND ts.pat_ssn = a.pat_ssn
+                WHERE a.pat_ssn = %s AND a.finished = 0;
+            """
+            cursor.execute(get_appointments, (pat_ssn,))
+            appointments = cursor.fetchall()
+
+            if appointments:
+                print('Your current appointments:')
+                for idx, (apt_id, datetime, specialty, slot_number, slot_id, phys_id) in enumerate(appointments, 1):
+                    print(f"({idx}) Date and Time: {datetime} | Specialty: {specialty} | Appointment ID: {apt_id}")
+
+                while True:
+                    try:
+                        cancel_choice = int(input('Enter the number of the appointment you want to cancel or (0) to go back: '))
+
+                        if cancel_choice == 0:
+                            break
+
+                        cancel_choice = cancel_choice - 1
+                        if 0 <= cancel_choice < len(appointments):
+                            apt_id, datetime, specialty, slot_number, slot_id, phys_id = appointments[cancel_choice]
+
+                            # Delete the appointment for the specified pat_ssn
+                            delete_apt = "DELETE FROM appointment WHERE apt_id = %s AND pat_ssn = %s;"
+                            cursor.execute(delete_apt, (apt_id, pat_ssn))
+                            connection.commit()
+
+                            if cursor.rowcount > 0:
+                                print(f"Appointment {apt_id} successfully canceled.")
+
+                                # Remove the patient's SSN from the timeslot
+                                update_timeslot = "UPDATE timeslot SET pat_ssn = NULL WHERE id = %s AND pat_ssn = %s;"
+                                cursor.execute(update_timeslot, (slot_id, pat_ssn))
+                                connection.commit()
+
+                                if cursor.rowcount > 0:
+                                    print(f"Timeslot {slot_number} successfully updated to remove patient's SSN.")
+
+
+                                    # Mark the physician as available for the slot in the phys_is_available table
+                                    update_availability = """
+                                        UPDATE phys_is_available 
+                                        SET available = 1 
+                                        WHERE slot_id = %s AND phys_id = %s;
+                                    """
+                                    cursor.execute(update_availability, (slot_id, phys_id))
+                                    connection.commit()
+
+                                    if cursor.rowcount > 0:
+                                        print("Physician's availability updated successfully.")
+                                    else:
+                                        print("Failed to update physician's availability. No matching record found.")
+                                else:
+                                    print("Failed to update the timeslot.")
+                            else:
+                                print("Failed to cancel the appointment.")
+                        else:
+                            print('Invalid choice. No appointment canceled.')
+                    except ValueError:
+                        print('Invalid input. Try again.')
+            else:
+                print("You have no upcoming appointments.")
+
+    except pymysql.MySQLError as e:
+        print("Error managing appointments: ", e)
+        return None
+
+def print_finished_appointments(connection, pat_ssn):
+    try:
+        with connection.cursor() as cursor:
+            query = """
+                SELECT a.apt_id, a.datetime, p.lname, p.spec_name, pr.rating
+                FROM appointment AS a JOIN physician AS p ON a.phys_id = p.phys_id JOIN pat_rates_phys AS pr ON a.apt_id = pr.apt_id
+                WHERE a.pat_ssn = %s AND finished = 1
+                ORDER BY datetime ASC;
+            """
+            cursor.execute(query, (pat_ssn,))
+            appointments = cursor.fetchall()
+
+            if appointments:
+                table_data = [
+                    [i + 1, datetime, lname, spec_name, apt_id, rating]
+                    for i, (apt_id, datetime, lname, spec_name, rating) in enumerate(appointments)
+                ]
+                
+                # Define headers
+                headers = ["#", "Date & Time", "Physician", "Specialty", "Appointment ID", "Rating"]
+
+                # Print the formatted table
+                print(tabulate(table_data, headers=headers, tablefmt="grid"))
+            else:
+                print(f"You don't have finished appointments.")
+
+    except pymysql.MySQLError as e:
+        print("Error fetching finished appointments: ", e)
+
+def cancel_appointments_phys(connection, phys_id):
+    try:
+        with connection.cursor() as cursor:
+            get_appointments = "SELECT a.apt_id, a.datetime FROM appointment AS a JOIN physician AS p ON a.phys_id = p.phys_id WHERE a.phys_id = %s AND a.finished = 0;"
+            cursor.execute(get_appointments, (phys_id,))
+            appointments = cursor.fetchall()
+
+            if appointments:
+                table_data = [[i, datetime, apt_id] for i, (apt_id, datetime) in enumerate(appointments, 1)]
+                headers = ["#", "Date and Time", "Appointment ID"]
+
+                # Display the table of appointments
+                print("Your current appointments:")
+                print(tabulate(table_data, headers=headers, tablefmt="grid"))
+
+                while True:
+                    try:
+                        cancel_choice = int(input('Enter the number of the appointment you want to cancel or (0) to go back: '))
+
+                        if cancel_choice == 0:
+                            break
+
+                        cancel_choice = cancel_choice - 1
+                        if 0 <= cancel_choice < len(appointments):
+                            apt_id, datetime= appointments[cancel_choice]
+
+                            delete_apt = "DELETE FROM appointment WHERE apt_id = %s;"
+                            cursor.execute(delete_apt, (apt_id,))
+                            connection.commit()
+
+                            print(f'Appointment has been successfully canceled (ID: {apt_id}).')
+                        else:
+                            print('Invalid choice. No appointment canceled.')
+                    except ValueError:
+                        print('Invalid input. Try again.')
+            else:
+                print("You have no upcoming appointments.")
+
+    except pymysql.MySQLError as e:
+        print('Error cancelling appointment: ')
+        return None
+    
+def avg_rating_get(connection, phys_id):
+    try:
+        with connection.cursor() as cursor:
+            avg_rating_query = """
+                SELECT p.lname, p.spec_name, AVG(pr.rating) AS avg_rating
+                FROM physician AS p
+                JOIN pat_rates_phys AS pr ON p.phys_id = pr.phys_id
+                WHERE p.phys_id = %s
+                GROUP BY p.lname, p.spec_name;
+            """
+            cursor.execute(avg_rating_query, (phys_id,))
+            rating = cursor.fetchone()
+
+            if rating:
+                lname, spec_name, avg_rating = rating
+                if avg_rating is not None:
+                    print(f"Dr. {lname}, {spec_name} | Average Rating: {avg_rating:.1f}")
+                else:
+                    print(f"Dr. {lname}, {spec_name} | No ratings yet.")
+            else:
+                print(f"No ratings found for physician ID: {phys_id}")
+
+    except pymysql.MySQLError as e:
+        print('Error fetching rating:', e)
+        return None
+
+def most_visited_physician(connection):
+    try:
+        with connection.cursor() as cursor:
+            query = """
+            SELECT p.fname, p.lname, COUNT(a.apt_id) AS visit_count
+            FROM appointment AS a
+            JOIN physician AS p ON a.phys_id = p.phys_id
+            WHERE a.finished = 1
+            GROUP BY a.phys_id
+            ORDER BY visit_count DESC
+            LIMIT 1;
+            """
+            cursor.execute(query)
+            result = cursor.fetchone()
+
+            if result:
+                fname, lname, visit_count = result
+                print(f"The most visited physician is Dr. {fname} {lname} with {visit_count} appointments.")
+            else:
+                print("No finished appointments found.")
+    except pymysql.MySQLError as e:
+        print(f"Error retrieving most visited physician: {e}")
+        return None
+
+def create_available_timeslots(connection, phys_id, date):
+    try:
+        # Parse the `date` argument if it's a string
+        if isinstance(date, str):
+            date = datetime.strptime(date, "%Y-%m-%d").date()
+
+        # Ensure the date is greater than today
+        today = datetime.today().date()
+        if date <= today:
+            print("Error: The selected date must be in the future.")
+            return
+
+        # Generate 30-minute timeslots from 09:00 to 17:00
+        start_time = datetime.combine(date, datetime.min.time()) + timedelta(hours=9)
+        end_time = datetime.combine(date, datetime.min.time()) + timedelta(hours=17)
+        slots = []
+        slot_number = 1  # Start slot numbers sequentially from 1
+        physician_number = int(phys_id[3:])
+        allowed_suffix = chr(ord('a') + (physician_number - 1))  # Suffix for the physician
+
+        while start_time < end_time:
+            slot_id = f"{start_time.strftime('%Y%m%d%H%M')}{allowed_suffix}"  # Slot ID includes datetime and suffix
+            slots.append((slot_number, slot_id, start_time.strftime("%Y-%m-%d %H:%M")))  # Append slot number, ID, and datetime
+            slot_number += 1
+            start_time += timedelta(minutes=30)
+
+        with connection.cursor() as cursor:
+            # Check if timeslots already exist for the given date
+            check_existing_slots = """
+                SELECT COUNT(*)
+                FROM timeslot AS ts
+                WHERE DATE(ts.datetime) = %s AND ts.id LIKE %s;
+            """
+            cursor.execute(check_existing_slots, (date, f"%{allowed_suffix}"))
+            existing_count = cursor.fetchone()[0]
+
+            if existing_count > 0:
+                print(f"Timeslots already exist for {date.strftime('%d-%m-%Y')}.")
+                return False
+
+            # Insert new timeslots and availability
+            for slot_number, slot_id, datetime_str in slots:
+                insert_timeslot_query = """
+                    INSERT INTO timeslot (slot, datetime, id)
+                    VALUES (%s, %s, %s);
+                """
+                cursor.execute(insert_timeslot_query, (slot_number, datetime_str, slot_id))
+
+                insert_availability_query = """
+                    INSERT INTO phys_is_available (available, phys_id, slot_id)
+                    VALUES (1, %s, %s);
+                """
+                cursor.execute(insert_availability_query, (phys_id, slot_id))
+
+                
+            connection.commit()
+            print(f"Availability successfully created for {date.strftime('%d-%m-%Y')}.")
+
+    except pymysql.MySQLError as e:
+        print("Error creating timeslots: ", e)
+        return None
+
+def appointment_finished(connection, apt_id):
+    try:
+        with connection.cursor() as cursor:
+            print('ok')
+
+    except pymysql.MySQLError as e:
+        print('Error finishing appointment: ', e)
+        return None
+
+def main():
+    connection = connect_to_database()
+    if not connection:
+        return
+
+    valid_tables = {'patient', 'physician', 'timeslot', 'appointment', 'pat_rates_phys', 'phys_is_available'}
+
+    while True:
+
+        try:
+            enter_app = int(input("(1) Patient\n(2) Physician\n(3) Data\n(0) Exit\n"))
+
+            if enter_app == 0: 
+                print("Exiting...")
+                exit(1)
+
+            # !!!   PATIENT ENTERS  !!!
+            elif enter_app == 1:
+                attribute = 'patient'
+                ssn = ssn_get()
+                existence = check_person_existence(connection, attribute, ssn)
+                if existence is False:
+                    email = email_get()
+                    lname = lname_get()
+                    fname = fname_get()
+                    birth_date = birthdate_get()
+                    phone = phone_get()
+                    address = address_get()
+                    insert_patient_data(connection, ssn, email, lname, fname, birth_date, phone, address)
+                
+                while True:
+                    try:
+                        option = int(input('(1) Book appointment\n(2) Cancel appointment\n(3) Rate appointment\n(4) Appointment history\n(5) Change data\n(0) Go back\n'))
+
+                        if option == 1:                           
+                            date = date_get() 
+                            phys_id = print_and_choose_physician(connection)
+                            available_hours = display_physician_availability(connection, phys_id, date)
+                            if available_hours is False:
+                                continue
+                            
+                            while True:
+                                desired_hour = desired_hour_get(available_hours)
+                                if desired_hour in available_hours:
+                                    break
+                                else: 
+                                    print('Enter a valid available hour from the list.')    
+                            
+                            book_appointment(connection, ssn, phys_id, date, desired_hour)
+
+
+                        elif option == 2:
+                            cancel_appointments(connection, ssn)
+
+                        elif option == 3:
+                            rate_appointment(connection, ssn)
+                            
+                        elif option == 4:
+                            print_finished_appointments(connection, ssn)
+
+                        elif option == 5:
+                            while True:
+                                try:
+                                    change_patient_data = int(input('What do you wish to change?\n(1) E-Mail\t\t(2) Last Name\t(3) First Name\n(4) Date of birth\t(5) Phone\t(6) Address\n(0) Go Back\n'))
+                                    if change_patient_data == 1:
+                                        pat_column = 'email'
+                                        print_column = 'e-mail'
+                                        new_data = email_get()
+
+                                    elif change_patient_data == 2:
+                                        pat_column = 'lname'
+                                        print_column = 'last name'
+                                        new_data = lname_get()
+
+                                    elif change_patient_data == 3:
+                                        pat_column = 'fname'
+                                        print_column = 'first name'
+                                        new_data = fname_get()
+
+                                    elif change_patient_data == 4:
+                                        pat_column = 'birthdate'
+                                        print_column = 'date of birth'
+                                        new_data = birthdate_get()
+
+                                    elif change_patient_data == 5:
+                                        pat_column = 'phone'
+                                        print_column = 'phone'
+                                        new_data = phone_get()
+
+                                    elif change_patient_data == 6:
+                                        pat_column = 'address'
+                                        print_column = 'address'
+                                        new_data = address_get()
+
+                                    elif change_patient_data == 0: 
+                                        break
+
+                                    else: 
+                                        print('Invalid input.')
+                                        continue
+
+                                    update_user_data(connection, attribute, pat_column, new_data, ssn)
+                                    print('The {} was changed!'.format(print_column))
+
+                                except ValueError:
+                                    print('Invalid input.')
+                                    continue
+                    
+                        elif option == 0:
+                            break
+
+                        else: print('Invalid input. Try again.')
+
+                    except ValueError:
+                        print('Invalid input. Try again')
+                        continue
+
+            # !!!   PHYSICIAN ENTERS  !!!
+            elif enter_app == 2:
+                attribute = 'physician'
+                phys_id = phys_id_get()
+                existence = check_person_existence(connection, attribute, phys_id)
+                if existence is False: 
+                    email = email_get()
+                    lname = lname_get()
+                    fname = fname_get()
+                    phone = phone_get()
+                    spec_name = spec_name_get(connection)
+                    insert_physician_data(connection, phys_id, email, lname, fname, phone, spec_name)
+                while True:
+                    try:
+                        option_phys = int(input('(1) Update availability\n(2) List pending appointments\n(3) Cancel appointment\n(4) Create timeslots\n(0) Go back\n'))
+                        if option_phys == 1:
+                            date = date_get()
+                            toggle_physician_availability(connection, phys_id, date)
+
+                        elif option_phys == 2:
+                            print_pending_appointments(connection, phys_id)
+
+                        elif option_phys == 3:
+                            cancel_appointments_phys(connection, phys_id)
+                        
+                        elif option_phys == 4:
+                            date = date_get()
+                            create_timeslots = create_available_timeslots(connection, phys_id, date)
+                            if create_timeslots is False:
+                                while True:
+                                    try:
+                                        change_availability = int(input('Do you wish to change the availability for {}?\n(1) Yes\n(0) No\n'.format(date)))
+                                        if change_availability == 0:
+                                            break
+                                        
+                                        elif change_availability == 1:
+                                            toggle_physician_availability(connection, phys_id, date)
+                                            continue
+
+                                        else: print('Invalid input. Try again.')
+
+                                    except ValueError:
+                                        print('Invalid input. Try again.')
+                        
+                        elif option_phys == 0:
+                            break
+
+                        else: print('Invalid input. Try again.')
+
+                    except ValueError:
+                        print('Invalid input. Try again.')
+            
+            # !!!   DATA    !!!
+            elif enter_app == 3:
+                while True:
+                    try: 
+                        data = int(input('(1) List table\n(2) Delete user\n(3) Check most visited physician\n(4) Physician ratings\n(0) Go back\n'))
+                    
+                        if data == 1:
+                            while True:
+                                print('Available tables:')
+                                for tables in valid_tables:
+                                    print(tables)
+                                table = input('Enter a table:\n').lower()
+                                if table in valid_tables:
+                                    list_table(connection, table)
+                                    break
+                                else: print('Invalid table.')
+                            
+                        elif data == 2:
+                            while True:
+                                try:
+                                    who = int(input('(1) Delete patient\n(2) Delete physician\n(0) Go back\n'))
+                                    if who == 1:
+                                        attribute = 'patient'
+                                        patient_ssn = ssn_get()
+                                        delete_user(connection, attribute, patient_ssn)
+
+                                    elif who == 2:
+                                        attribute = 'physician'
+                                        physician_id = phys_id_get()
+                                        delete_user(connection, attribute, physician_id)
+                                    
+                                    elif who == 0: break
+
+                                    else: print('Invalid input. Try again.')
+                                
+                                except ValueError:
+                                    print('Invalid input. Try again.')
+
+                        elif data == 3:
+                            most_visited_physician(connection)
+
+                        elif data == 4:
+                            phys_id = print_and_choose_physician(connection)
+                            avg_rating = avg_rating_get(connection, phys_id)
+                        
+                        elif data == 0:
+                            break
+
+                        else: print('Invalid input. Try again.')
+
+                    except ValueError:
+                        print('Invalid input. Try again.')
+                        continue
+
+            else: print("Invalid input. Try again.")
+
+        except ValueError:
+            print("Invalid input. Try again.")
+            continue
+
+if __name__ == "__main__":
+    main()
