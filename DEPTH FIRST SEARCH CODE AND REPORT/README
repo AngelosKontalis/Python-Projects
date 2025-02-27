@@ -1,0 +1,65 @@
+# Depth First Search (DFS) Algorithm
+
+This repository contains an implementation of the **Depth First Search (DFS) algorithm** in Python, along with a detailed report explaining its principles, applications, and performance analysis.
+
+
+## Introduction
+DFS is a fundamental algorithm used in graph traversal and search problems. It explores as far as possible along each branch before backtracking. This technique is widely used in applications such as:
+- Pathfinding in graphs
+- Solving mazes
+- Detecting cycles in graphs
+- Topological sorting
+
+## Features
+- Implementation of DFS for graph traversal
+- Support for both **iterative** and **recursive** versions
+- Visualization of DFS traversal
+- Performance analysis in the included report
+
+## Installation
+To use this project, clone the repository and navigate to the project folder:
+
+```bash
+git clone https://github.com/AngelosKontalis/Python-Projects.git
+cd "Python-Projects/DEPTH FIRST SEARCH CODE AND REPORT"
+```
+
+Ensure you have Python installed (version 3.x recommended). No additional dependencies are required.
+
+## Usage
+Run the DFS script with the following command:
+
+```bash
+python dfs.py
+```
+
+Modify the `graph` structure in `dfs.py` to test different graph inputs.
+
+## Examples
+Example input graph:
+```python
+graph = {
+    'A': ['B', 'C'],
+    'B': ['D', 'E'],
+    'C': ['F'],
+    'D': [],
+    'E': ['F'],
+    'F': []
+}
+```
+
+Expected DFS traversal output:
+```
+DFS Traversal: A -> B -> D -> E -> F -> C -> F
+```
+
+## Report
+The repository includes a comprehensive **PDF report** detailing:
+- Theoretical background of DFS
+- Algorithm implementation
+- Performance analysis
+- Applications and use cases
+
+## License
+This project is open-source and available under the [MIT License](LICENSE). Feel free to use and modify it as needed.
+
